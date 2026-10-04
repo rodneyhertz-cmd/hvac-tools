@@ -1,0 +1,36 @@
+name: Gerar APK
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Juntar imagens da tela inicial
+        run: python3 merge_images.py
+      - name: Preparar app web
+        run: |
+          mkdir -p www
+          cp index.html www/index.html
+      - name: Instalar Capacitor e criar projeto Android
+        run: |
+          npm install
+          npx cap add android
+          npx cap sync android
+      - name: Compilar APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+      - name: Publicar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ferramentas-hvac-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
