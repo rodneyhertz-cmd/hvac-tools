@@ -874,6 +874,7 @@ let nTotal=0;
 window.onNativeMag=function(arr){ gotNative=true; nTotal+=arr.length; if(!sensor||!sensor.native) return; for(const a of arr) onMag({x:a[0],y:a[1],z:a[2]}); };
 function startSensor(){
   if(sensor||sim) return;
+  const dgx=$('diag'); if(dgx) dgx.textContent='Ponte nativa: '+(NATIVE()?'ativa':'ausente')+' · build 3';
   if(NATIVE()){
     if(!AndroidMag.has()) return setStatus('Este aparelho não tem magnetômetro.','#ef4444');
     resetFilter(); cnt=0; rate=0; rateT=performance.now(); gotNative=false; sensor={native:true};
