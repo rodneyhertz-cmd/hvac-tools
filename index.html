@@ -868,13 +868,24 @@ function onMag(v){
   const now=performance.now(); cnt++; if(now-rateT>=1000){rate=cnt;cnt=0;rateT=now;}
   magUI(dc,ac,x,y);
 }
+/* Ponte Capacitor (plugin MagBridge): cria window.AndroidMag quando a ponte antiga não existe */
+(function(){
+  try{
+    const C=window.Capacitor;
+    if(C&&typeof C.registerPlugin==='function'&&!window.AndroidMag){
+      const M=C.registerPlugin('MagBridge');
+      M.addListener('mag',e=>{ if(window.onNativeMag&&e&&e.d) window.onNativeMag(e.d); });
+      window.AndroidMag={plugin:true,has:()=>true,start:()=>{ M.start().catch(()=>{}); },stop:()=>{ M.stop().catch(()=>{}); }};
+    }
+  }catch(e){}
+})();
 const NATIVE=()=>window.AndroidMag;
 let gotNative=false;
 let nTotal=0;
 window.onNativeMag=function(arr){ gotNative=true; nTotal+=arr.length; if(!sensor||!sensor.native) return; for(const a of arr) onMag({x:a[0],y:a[1],z:a[2]}); };
 function startSensor(){
   if(sensor||sim) return;
-  const dgx=$('diag'); if(dgx) dgx.textContent='Ponte nativa: '+(NATIVE()?'ativa':'ausente')+' · build 3';
+  const dgx=$('diag'); if(dgx) dgx.textContent='Ponte nativa: '+(NATIVE()?(window.AndroidMag.plugin?'ativa (plugin)':'ativa (interface)'):'ausente')+' · build 4';
   if(NATIVE()){
     if(!AndroidMag.has()) return setStatus('Este aparelho não tem magnetômetro.','#ef4444');
     resetFilter(); cnt=0; rate=0; rateT=performance.now(); gotNative=false; sensor={native:true};

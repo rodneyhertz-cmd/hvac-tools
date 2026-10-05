@@ -11,24 +11,25 @@ import android.os.Looper;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.JSArray;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
 
 public class MainActivity extends BridgeActivity {
     private MagBridge mag;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Plugin nativo do Capacitor (caminho oficial): precisa ser registrado ANTES do super.onCreate
+        registerPlugin(MagPlugin.class);
         super.onCreate(savedInstanceState);
+        // Ponte antiga (window.AndroidMag), mantida como reserva
         final WebView web = getBridge().getWebView();
         mag = new MagBridge(this, web);
         web.addJavascriptInterface(mag, "AndroidMag");
-        // A interface só vale para páginas carregadas DEPOIS de adicionada:
-        // recarrega a página inicial para que window.AndroidMag exista.
-        web.post(new Runnable() {
-            @Override
-            public void run() {
-                web.reload();
-            }
-        });
     }
 
     @Override
@@ -37,7 +38,91 @@ public class MainActivity extends BridgeActivity {
         super.onPause();
     }
 
-    /* Ponte entre o magnetômetro do Android e o app (window.AndroidMag) */
+    /* ===== Plugin Capacitor "MagBridge": magnetômetro -> app ===== */
+    @CapacitorPlugin(name = "MagBridge")
+    public static class MagPlugin extends Plugin implements SensorEventListener {
+        private SensorManager sm;
+        private Sensor sensor;
+        private final Handler handler = new Handler(Looper.getMainLooper());
+        private final JSArray batch = new JSArray();
+        private boolean running = false;
+
+        private final Runnable flush = new Runnable() {
+            @Override
+            public void run() {
+                if (!running) return;
+                if (batch.length() > 0) {
+                    JSObject ret = new JSObject();
+                    ret.put("d", batch);
+                    notifyListeners("mag", ret);
+                    clearBatch();
+                }
+                handler.postDelayed(this, 50);
+            }
+        };
+
+        private void clearBatch() {
+            while (batch.length() > 0) batch.remove(batch.length() - 1);
+        }
+
+        @Override
+        public void load() {
+            sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
+            sensor = sm.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+        }
+
+        @PluginMethod
+        public void has(PluginCall call) {
+            JSObject r = new JSObject();
+            r.put("value", sensor != null);
+            call.resolve(r);
+        }
+
+        @PluginMethod
+        public void start(PluginCall call) {
+            if (sensor != null && !running) {
+                running = true;
+                sm.registerListener(this, sensor, 10000);
+                handler.postDelayed(flush, 50);
+            }
+            call.resolve();
+        }
+
+        @PluginMethod
+        public void stop(PluginCall call) {
+            stopSensing();
+            call.resolve();
+        }
+
+        private void stopSensing() {
+            if (!running) return;
+            running = false;
+            sm.unregisterListener(this);
+            handler.removeCallbacks(flush);
+            clearBatch();
+        }
+
+        @Override
+        protected void handleOnPause() {
+            stopSensing();
+        }
+
+        @Override
+        public void onSensorChanged(SensorEvent e) {
+            JSArray p = new JSArray();
+            try {
+                p.put((double) e.values[0]);
+                p.put((double) e.values[1]);
+                p.put((double) e.values[2]);
+            } catch (Exception ex) { return; }
+            batch.put(p);
+        }
+
+        @Override
+        public void onAccuracyChanged(Sensor s, int accuracy) { }
+    }
+
+    /* ===== Ponte antiga window.AndroidMag (reserva) ===== */
     public static class MagBridge implements SensorEventListener {
         private final SensorManager sm;
         private final Sensor sensor;
@@ -68,9 +153,7 @@ public class MainActivity extends BridgeActivity {
         }
 
         @JavascriptInterface
-        public boolean has() {
-            return sensor != null;
-        }
+        public boolean has() { return sensor != null; }
 
         @JavascriptInterface
         public void start() {
